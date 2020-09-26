@@ -14,7 +14,6 @@ bot = telebot.TeleBot(config.token)
 
 
 
-
 @bot.message_handler(content_types=["text"])
 def logic(message):
     if message.text == '/admin ' + str(config.adm_password):
