@@ -6,23 +6,12 @@ import usr
 bot = telebot.TeleBot(config.token)
 
 
-
-
-
-
-
-
-
-
 @bot.message_handler(content_types=["text"])
 def logic(message):
     if message.text == '/admin ' + str(config.adm_password):
         bot.send_message(message.chat.id, adm.logic(message.text))
-
-
-
-
-
+    else:
+        bot.send_message(message.chat.id, usr.logic(message.text))
 
 
 if __name__ == '__main__':

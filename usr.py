@@ -1,2 +1,2 @@
-def logic():
-    pass
+def logic(msg):
+    return msg
