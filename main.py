@@ -170,10 +170,37 @@ def sell_keys(product_name: str, keys: list):
 
 button_create_product = KeyboardButton('Добавить товар')
 button_delete_product = KeyboardButton('Удалить товар')
+button_catalog = KeyboardButton('перейти к каталогу')
+button_filter_price = KeyboardButton('цена')
+button_filter_category = KeyboardButton('тип')
+button_search_product = KeyboardButton('Поиск по названию')
+button_backtofilters = KeyboardButton('Вернуться к фильтрам')
+button_category1 = KeyboardButton('Тип 1')
+button_category2 = KeyboardButton('Тип 2')
+button_category3 = KeyboardButton('Тип 3')
 
 markup3 = ReplyKeyboardMarkup(
     resize_keyboard=True, one_time_keyboard=True
 ).add(button_create_product).add(button_delete_product)
+
+
+markup_user = ReplyKeyboardMarkup(
+    resize_keyboard=True, one_time_keyboard=True
+).add(button_catalog)
+
+
+markup_filters = ReplyKeyboardMarkup(
+    resize_keyboard=True, one_time_keyboard=True
+).add(button_filter_price).add(button_filter_category).add(button_search_product)
+
+markup_backtofilters = ReplyKeyboardMarkup(
+    resize_keyboard=True, one_time_keyboard=True
+).add(button_backtofilters)
+
+markup_categories = ReplyKeyboardMarkup(
+    resize_keyboard=True, one_time_keyboard=True
+).add(button_category1).add(button_category2).add(button_category3).add(button_backtofilters)
+
 
 #  -----
 
@@ -201,7 +228,7 @@ async def admin_panel(message):
     conn.commit()
     if is_admin:
         if state == 'admin_panel':
-            await msg.reply("Выберите действие", reply_markup=markup3)
+            await message.reply("Выберите действие", reply_markup=markup3)
     else:
         await bot.send_message(usr_id, 'Введите пароль')
         change_state(usr_id, 'enter_password')
@@ -223,6 +250,7 @@ async def logic(msg: types.Message):
         print(cursor.fetchall())
         conn.commit()
         change_state(usr_id, 'name_entered')
+        await bot.send_message(usr_id, 'выберите действие', reply_markup=markup_user)
     elif state == 'enter_password':
         if msg.text == config.adm_password:
             conn = sqlite3.connect("test.db")
@@ -232,11 +260,23 @@ async def logic(msg: types.Message):
             change_state(usr_id, 'admin_panel')
             print('new admin')
             print('id: ' + str(usr_id))
-            await msg.reply("Выберите действие", reply_markup=markup3)
+            await bot.send_message(usr_id, "Выберите действие", reply_markup=markup3)
         else:
             await bot.send_message(usr_id, 'wrong password')
     elif state == 'name_entered':
-        await bot.send_message(usr_id, 'name_entered')
+        if msg.text == 'перейти к каталогу':
+            await bot.send_message(usr_id, 'Укажите фильтры', reply_markup=markup_filters)
+            change_state(usr_id, 'choose_filters')
+    elif state == 'choose_filters':
+        if msg.text == 'цена':
+            await bot.send_message(usr_id, 'введите диапозон цен через пробел в формате:\n200 800', reply_markup=markup_backtofilters)
+            change_state(usr_id, 'filter_price')
+        elif msg.text == 'тип':
+            await bot.send_message(usr_id, 'Выберите тип товара', reply_markup=markup_categories)
+            change_state(usr_id, 'choose_category')
+        elif msg.text == 'поиск по названию':
+            await bot.send_message(usr_id, 'Введите название', reply_markup=markup_backtofilters)
+            change_state(usr_id, 'search_product')
 #  -----
 
 if __name__ == '__main__':
