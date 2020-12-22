@@ -1,23 +1,19 @@
-import config
-import sqlite3
 from aiogram import Bot, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.dispatcher import Dispatcher
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.contrib.middlewares.logging import LoggingMiddleware
+from aiogram.types.message import ContentTypes
 from messages import Messages
+import sqlite3
 import markups
+import config
 import asyncio
-
 
 messages = Messages()
 
 bot = Bot(token=config.token)
-loop = asyncio.get_event_loop()
-dp = Dispatcher(bot, storage=MemoryStorage(), loop=loop)
-dp.middleware.setup(LoggingMiddleware())
-TEST_PRICE = types.LabeledPrice(label='Цена теста', amount=1)
+dp = Dispatcher(bot, storage=MemoryStorage())
 
 
 # Преобразовние корзины из строки в словарь
@@ -32,8 +28,13 @@ def make_dict(text: str):
         count = product.split('__')[1]
         product = product.split('__')[0]
         cursor.execute('''SELECT * FROM products WHERE name = ?''', (product,))
-        price = cursor.fetchall()[0][2]
-        result[product] = [count, price]
+        fetchall = cursor.fetchall()
+        try:
+            price = fetchall[0][2]
+            result[product] = [count, price]
+        except IndexError:
+            pass
+    conn.commit()
     return result
 
 
@@ -44,11 +45,12 @@ def is_user_exist(usr_id):
     try:
         cursor.execute('''SELECT * FROM users WHERE _id = ? LIMIT 1''', (usr_id,))
         conn.commit()
-        if cursor.fetchall() == []:
+        if not cursor.fetchall():
             return False
         else:
             return True
     except:
+        conn.commit()
         return False
 
 
@@ -84,8 +86,11 @@ def add_to_cart(usr_id, product_name, count=1):
     else:
         if product_name in fetchall:
             exist_count = fetchall.split(product_name + '__')[1].split(' ')[0]
-            fetchall = fetchall.replace(product_name + '__' + exist_count,
-                                        product_name + '__' + str(int(exist_count) + count))
+            if exist_count != -count:
+                fetchall = fetchall.replace(product_name + '__' + exist_count,
+                                            product_name + '__' + str(int(exist_count) + count))
+            else:
+                fetchall = fetchall.replace(product_name + '__' + exist_count, '')
             cursor.execute('''UPDATE users SET basket = ? WHERE _id = ?''', (fetchall, usr_id))
         else:
             cursor.execute('''UPDATE users SET basket = ? WHERE _id = ?''',
@@ -101,13 +106,12 @@ def remove_from_cart(usr_id, product_name, count=0):
     cursor = conn.cursor()
     cursor.execute('''SELECT * FROM users WHERE _id = ?''', (usr_id,))
     fetchall = cursor.fetchall()[0][3]
-    new_basket = 0
     if count == 0:
-        cursor.execute('''UPDATE users SET basket = ? WHERE _id = ?''', (new_basket, usr_id))
         exist_count = fetchall.split(product_name + '__')[1].split(' ')[0]
-        fetchall.replace(' ' + product_name + '__' + exist_count, ' ')
+        add_to_cart(usr_id, product_name, count=-int(exist_count))
     else:
         add_to_cart(usr_id, product_name, count=-count)
+    conn.commit()
 
 
 # удаление корзины
@@ -115,6 +119,7 @@ def remove_cart(usr_id):
     conn = sqlite3.connect("data.db")
     cursor = conn.cursor()
     cursor.execute('''UPDATE users SET basket = ? WHERE _id = ?''', ('', usr_id))
+    conn.commit()
 
 
 # Удаление товара
@@ -122,8 +127,6 @@ def delete_product(product_name):
     conn = sqlite3.connect("data.db")
     cursor = conn.cursor()
     cursor.execute('''DELETE FROM products WHERE name = ?''', (product_name,))
-    cursor.execute('''DROP TABLE {0}'''.format(product_name))
-    cursor.execute('''DROP TABLE {0}'''.format(product_name + '_sold'))
     conn.commit()
 
 
@@ -157,8 +160,6 @@ def new_product(product_name: str,
     conn = sqlite3.connect("data.db")
     cursor = conn.cursor()
     cursor.execute('''INSERT INTO products (name) VALUES (?)''', (product_name,))
-    cursor.execute('''CREATE TABLE {0} (key INTEGER PRIMARY KEY )'''.format(product_name))
-    cursor.execute('''CREATE TABLE {0} (key INTEGER PRIMARY KEY )'''.format(product_name + '_sold'))
     if category is not None:
         cursor.execute('''UPDATE products SET category = ?  WHERE name = ?''', (category, product_name))
     if price is not None:
@@ -174,41 +175,12 @@ def is_admin(usr_id):
     conn = sqlite3.connect("data.db")
     cursor = conn.cursor()
     cursor.execute('''SELECT * FROM users WHERE name = ? AND is_admin = ?''', (usr_id, 1))
-    if cursor.fetchall() is not None:
+    fetchall = cursor.fetchall()
+    conn.commit()
+    if fetchall is not None:
         return True
     else:
         return False
-
-
-# Добавление ключей
-def add_keys(product_name: str, keys: list):
-    conn = sqlite3.connect("data.db")
-    cursor = conn.cursor()
-    for key in keys:
-        cursor.execute(f'''INSERT INTO {product_name} (key) VALUES (?)''', (key,))
-    conn.commit()
-
-
-# удаление ключей
-def delete_keys(product_name: str, keys: list):
-    conn = sqlite3.connect("data.db")
-    cursor = conn.cursor()
-    for i in keys:
-        try:
-            cursor.execute('''DELETE FROM ? WHERE name = ?''', (product_name, i))
-        except:
-            cursor.execute('''DELETE FROM ?_sold WHERE name = ?''', (product_name, i))
-    conn.commit()
-
-
-# перенос ключей из таблицы активных в таблицу неактивных
-def sell_keys(product_name: str, keys: list):
-    conn = sqlite3.connect("data.db")
-    cursor = conn.cursor()
-    for i in keys:
-        cursor.execute('''DELETE FROM ? WHERE name = ?''', (product_name, i))
-        cursor.execute('''INSERT INTO ?_sold (key) VALUES (?)''', (product_name, i))
-    conn.commit()
 
 
 def gen_catalog(price=None, category=None, product_name=None):
@@ -239,19 +211,41 @@ def gen_basket(products: dict):
     basket_markup = InlineKeyboardMarkup(resize_keyboard=True)
     names = list(products.keys())
     total_price = 0
+    c = 0
     for i in range(len(products)):
         name = names[i]
         count, price = products[name]
-        total_price += price
-        remove = InlineKeyboardButton('Убрать', callback_data='rem_' + name)
-        plus = InlineKeyboardButton('+', callback_data='+' + name)
-        minus = InlineKeyboardButton('-', callback_data='-' + name)
-        text = f'{name} - {str(price)} руб. х {str(count)}'
-        info = InlineKeyboardButton(text, callback_data='show_' + name)
-        basket_markup = basket_markup.add(info).row(remove, plus, minus)
-    pay = InlineKeyboardButton('Оплатить ' + str(total_price), callback_data='pay_' + str(total_price))
-    remove_all = InlineKeyboardButton('Очистить корзину', callback_data='rem_basket')
-    return basket_markup.row(pay, remove_all)
+        if count != '0':
+            c += 1
+            total_price += price * int(count)
+            remove = InlineKeyboardButton('Убрать', callback_data='rem_' + name)
+            plus = InlineKeyboardButton('+', callback_data='+' + name)
+            minus = InlineKeyboardButton('-', callback_data='-' + name)
+            text = f'{name} - {str(price)} руб. х {str(count)}'
+            info = InlineKeyboardButton(text, callback_data='show_' + name)
+            basket_markup = basket_markup.add(info).row(remove, plus, minus)
+    if c != 0:
+        pay = InlineKeyboardButton('Оплатить ' + str(total_price), callback_data='pay_' + str(total_price))
+        remove_all = InlineKeyboardButton('Очистить корзину', callback_data='remove_basket')
+        return basket_markup.row(pay, remove_all)
+    else:
+        return 'Ваша корзина пуста'
+
+
+def get_basket_price(usr_id):
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute('''SELECT * FROM users WHERE _id = ? LIMIT 1''', (usr_id,))
+    products = make_dict(cursor.fetchall()[0][3])
+    conn.commit()
+    names = list(products.keys())
+    total_price = 0
+    for i in range(len(products)):
+        name = names[i]
+        price = products[name][1]
+        total_price += price * int(products[name][0])
+    total_price = types.LabeledPrice(label='корзина', amount=total_price * 100)
+    return total_price
 
 
 # генерация корзины по id пользователя
@@ -260,6 +254,7 @@ def show_user_basket(usr_id):
     cursor = conn.cursor()
     cursor.execute('''SELECT * FROM users WHERE _id = ? LIMIT 1''', (usr_id,))
     fetchall = cursor.fetchall()[0][3]
+    conn.commit()
     if fetchall not in (None, '', ' '):
         products = make_dict(fetchall)
         markup = gen_basket(products)
@@ -274,22 +269,23 @@ def show_product(product_name):
     cursor = conn.cursor()
     cursor.execute('''SELECT * FROM products WHERE name = ? LIMIT 1''', (product_name,))
     fetchall = cursor.fetchall()[0]
+    conn.commit()
     price, description, img_link, in_stock = fetchall[2], fetchall[3], fetchall[4], fetchall[5]
-    string = f'{product_name}\nЦена — {price}\nВ наличии: {in_stock}\n{description}'
+    string = f'{product_name}\nЦена — {price}'
     result = [string, img_link]
     return result
 
 
 def logg_msg(usr_id, text):
-    with open('logs.txt', 'w', encoding='UTF-8') as logs:
+    with open('logs.txt', 'a', encoding='UTF-8') as logs:
         logs.writelines(f'new message:\n'
                         f'from: {usr_id}\n'
-                        f'text: {text}')
+                        f'text: {text}\n\n')
 
 
 def logg(text):
-    with open('logs.txt', 'w', encoding='UTF-8') as logs:
-        logs.writelines(text)
+    with open('logs.txt', 'a', encoding='UTF-8') as logs:
+        logs.writelines(text + '\n\n')
 
 
 async def send_product(usr_id, product_name):
@@ -316,7 +312,7 @@ async def send_product(usr_id, product_name):
 def set_temp(usr_id, temp):
     conn = sqlite3.connect("data.db")
     cursor = conn.cursor()
-    cursor.execute('''UPDATE users SET temp = ? WHERE _id = ?''', (temp, usr_id))
+    cursor.execute('''UPDATE users SET temp = ? WHERE _id = ?''', (str(temp), usr_id))
     conn.commit()
 
 
@@ -324,7 +320,9 @@ def get_temp(usr_id):
     conn = sqlite3.connect("data.db")
     cursor = conn.cursor()
     cursor.execute('''SELECT * FROM users WHERE _id = ?''', (usr_id,))
-    return cursor.fetchall()[0][4]
+    fetchall = cursor.fetchall()[0][4]
+    conn.commit()
+    return fetchall
 
 
 '''
@@ -335,6 +333,129 @@ async def handle_docs_photo(msg: types.Message):
     await bot.send_photo(msg.chat.id, photo)
     print(msg.caption)
 '''
+
+
+@dp.message_handler(commands=["buy"], state='*')
+async def cmd_get_buy(msg: types.Message):
+    usr_id = msg.chat.id
+    try:
+        await bot.send_invoice(usr_id, title='Basket',
+                               description=' ',
+                               provider_token=config.payment_token,
+                               currency='rub',
+                               is_flexible=True,  # True If you need to set up Shipping Fee
+                               prices=[get_basket_price(usr_id)],
+                               start_parameter='time-machine-example',
+                               payload='HAPPY FRIDAYS COUPON')
+    except:
+        await bot.send_message(usr_id, 'Ошибка')
+
+
+@dp.callback_query_handler(lambda callback: callback.data != '#', state='basket')
+async def callback_basket(callback: types.callback_query):
+    data = str(callback.data)
+    usr_id = callback.from_user.id
+    if data.startswith('show_'):
+        await send_product(usr_id, data[5::])
+    elif data.startswith('rem_'):
+        remove_from_cart(usr_id, data[4::])
+        mess_id = get_temp(usr_id)
+        new_basket = show_user_basket(usr_id)
+        await bot.edit_message_text('Ваша корзина:', usr_id, mess_id, reply_markup=new_basket)
+    elif data.startswith('+'):
+        add_to_cart(usr_id, data[1::], 1)
+        mess_id = get_temp(usr_id)
+        new_basket = show_user_basket(usr_id)
+        try:
+            await bot.edit_message_text('Ваша корзина:', usr_id, mess_id, reply_markup=new_basket)
+        except:
+            await bot.edit_message_text('Ваша корзина пуста', usr_id, mess_id, reply_markup=markups.to_catalog)
+    elif data.startswith('-'):
+        remove_from_cart(usr_id, data[1::], 1)
+        mess_id = get_temp(usr_id)
+        new_basket = show_user_basket(usr_id)
+        try:
+            await bot.edit_message_text('Ваша корзина:', usr_id, mess_id, reply_markup=new_basket)
+        except:
+            await bot.edit_message_text('Ваша корзина пуста', usr_id, mess_id, reply_markup=markups.to_catalog)
+
+    elif data.startswith('pay_'):
+        await bot.send_message(usr_id,
+                               "Оплата:", parse_mode='Markdown')
+        try:
+            await bot.send_invoice(usr_id, title='Basket',
+                                   description=' ',
+                                   provider_token=config.payment_token,
+                                   currency='rub',
+                                   is_flexible=True,  # True If you need to set up Shipping Fee
+                                   prices=[get_basket_price(usr_id)],
+                                   start_parameter='time-machine-example',
+                                   payload='HAPPY FRIDAYS COUPON')
+        except:
+            await bot.send_message(usr_id, 'сумма платежа должна быть не менее 60')
+    elif data in ('catalog', 'to_catalog'):
+        markup = gen_catalog()
+        button_filters = InlineKeyboardButton('фильтры', callback_data='filters')
+        markup = markup.add(button_filters)
+        await dp.current_state().set_state('catalog')
+        await bot.send_message(usr_id, 'Выберите товар', reply_markup=markup)
+    else:  # data = remove_basket'
+        remove_cart(usr_id)
+        await bot.send_message(usr_id, 'ваша корзина успешно очищена', reply_markup=markups.to_catalog)
+
+
+@dp.message_handler(state='basket')
+async def basket_handler(msg: types.message):
+    logg_msg(msg.chat.id, msg.text)
+    usr_id = msg.chat.id
+    state = dp.current_state(user=msg.from_user.id)
+    if msg.text == 'Фильтры':
+        await state.set_state('choose_filter')
+        await bot.send_message(usr_id, 'выберите фильтр', reply_markup=markups.catalog_filters)
+        await dp.current_state().set_state('catalog_filters')
+    elif msg.text == 'полный каталог':
+        markup = gen_catalog()
+        button_filters = InlineKeyboardButton('фильтры', callback_data='filters')
+        markup = markup.add(button_filters)
+        await dp.current_state().set_state('catalog')
+        await bot.send_message(msg.chat.id, 'Выберите товар', reply_markup=markup)
+
+
+@dp.shipping_query_handler(lambda query: True)
+async def shipping(shipping_query: types.ShippingQuery):
+    await bot.answer_shipping_query(shipping_query.id, ok=True, shipping_options=[
+        types.ShippingOption(id='instant', title='VIP доставка').add(types.LabeledPrice('VIP', 100000)),
+        types.ShippingOption(id='pickup', title='Стандартная доставка').add(types.LabeledPrice('classic', 30000))],
+                                    error_message='Произошла ошибка')
+
+
+@dp.pre_checkout_query_handler(lambda query: True)
+async def checkout(pre_checkout_query: types.PreCheckoutQuery):
+    await bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True,
+                                        error_message="Ошибка платежа")
+
+
+@dp.message_handler(content_types=ContentTypes.SUCCESSFUL_PAYMENT)
+async def got_payment(msg: types.Message):
+    usr_id = msg.chat.id
+    await bot.send_message(usr_id, 'Успешная оплата:\n`{} {}`\nСкоро с вами свяжется наш менеджер'.format(
+        msg.successful_payment.total_amount / 100, msg.successful_payment.currency), parse_mode='Markdown')
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute('''SELECT * FROM users WHERE _id = ? LIMIT 1''', (usr_id,))
+    products = make_dict(cursor.fetchall()[0][3])
+    conn.commit()
+    basket_mp = InlineKeyboardMarkup(resize_keyboard=True)
+    names = list(products.keys())
+    total_price = 0
+    for i in range(len(products)):
+        name = names[i]
+        count, price = products[name]
+        total_price += price
+        text = f'{name} - {str(price)} руб. х {str(count)}'
+        info = InlineKeyboardButton(text, callback_data='show_' + name)
+        basket_mp = basket_mp.add(info)
+    await bot.send_message(config.manager_id, f'Новая покупка\nпользователь: {usr_id}', reply_markup=basket_mp)
 
 
 # получение текущего состояния бывает нужно для дебаггинга
@@ -354,34 +475,8 @@ async def cmd_basket(msg: types.Message):
         await bot.send_message(usr_id, answer)
     else:
         mess_id = await bot.send_message(usr_id, 'Ваша корзина:', reply_markup=answer)
-        set_temp(usr_id, mess_id)
+        set_temp(usr_id, mess_id["message_id"])
         await state.set_state('basket')
-
-
-
-@dp.callback_query_handler(lambda callback: callback.data != '#', state='basket')
-async def callback_basket(callback: types.callback_query):
-    data = str(callback.data)
-    usr_id = callback.from_user.id
-    if data.startswith('show_'):
-        await send_product(usr_id, data[5::])
-    elif data.startswith('rem_'):
-        remove_from_cart(usr_id, data[4::])
-        mess_id = get_temp(usr_id)
-        new_basket = show_user_basket(usr_id)
-        try:
-            await bot.edit_message_text('Ваша корзина:', usr_id, mess_id, reply_markup=new_basket)
-        except:
-            await bot.edit_message_text('Ваша корзина пуста', usr_id, mess_id, reply_markup=markups.to_catalog)
-    elif data.startswith('+'):
-        add_to_cart(usr_id, data[4::], 1)
-    elif data.startswith('-'):
-        remove_from_cart(usr_id, data[4::], 1)
-    elif data.startswith('pay_'):
-        pass  # TODO: оплата прямо здесь
-    else:  # data = rem_basket'
-        remove_cart(usr_id)
-        await bot.send_message(usr_id, 'ваша корзина успешно очищена', reply_markup=markups.to_catalog)
 
 
 @dp.message_handler(commands=["catalog"], state='*')
@@ -424,6 +519,23 @@ async def callback_product(callback: types.callback_query):
     else:
         add_to_cart(usr_id, callback.data)
         await bot.send_message(usr_id, 'вы успешно добавили товар в корзину\nпросмотреть — /basket')
+
+
+@dp.message_handler(state='product_watching')
+async def product_watching_handler(msg: types.message):
+    logg_msg(msg.chat.id, msg.text)
+    usr_id = msg.chat.id
+    state = dp.current_state(user=msg.from_user.id)
+    if msg.text == 'Фильтры':
+        await state.set_state('choose_filter')
+        await bot.send_message(usr_id, 'выберите фильтр', reply_markup=markups.catalog_filters)
+        await dp.current_state().set_state('catalog_filters')
+    elif msg.text == 'полный каталог':
+        markup = gen_catalog()
+        button_filters = InlineKeyboardButton('фильтры', callback_data='filters')
+        markup = markup.add(button_filters)
+        await dp.current_state().set_state('catalog')
+        await bot.send_message(msg.chat.id, 'Выберите товар', reply_markup=markup)
 
 
 @dp.callback_query_handler(lambda callback: callback.data != '#', state='add_description')
@@ -507,27 +619,17 @@ async def cmd_delete_product(msg: types.Message):
     state = dp.current_state()
     usr_id = msg.chat.id
     logg_msg(usr_id, msg.text)
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    cursor.execute('''SELECT * FROM products''')
+    markup = InlineKeyboardMarkup(row_width=2)
+    for product in cursor.fetchall():
+        button = InlineKeyboardButton((product[0] + ' — ' + str(product[2]) + ' руб.'), callback_data=product[0])
+        markup = markup.add(button)
+    conn.commit()
     if is_admin(usr_id):
         await state.set_state('delete_product')
-        await bot.send_message(usr_id, messages.delete_product, reply_markup=markups.to_admin_panel)
-
-
-@dp.message_handler(commands=["add_keys"], state='*')
-async def cmd_add_keys(msg: types.Message):
-    state = dp.current_state()
-    usr_id = msg.chat.id
-    logg_msg(usr_id, msg.text)
-    await state.set_state('add_keys')
-    await bot.send_message(usr_id, messages.add_keys, reply_markup=markups.to_admin_panel)
-
-
-@dp.message_handler(commands=["delete_keys"], state='*')
-async def cmd_delete_keys(msg: types.Message):
-    state = dp.current_state()
-    usr_id = msg.chat.id
-    logg_msg(usr_id, msg.text)
-    await state.set_state('delete_keys')
-    await bot.send_message(usr_id, messages.delete_keys, reply_markup=markups.to_admin_panel)
+        await bot.send_message(usr_id, messages.delete_product, reply_markup=markup.add(markups.button_to_admin_panel))
 
 
 @dp.message_handler(commands=["admin"], state='*')
@@ -538,7 +640,7 @@ async def cmd_admin(msg: types.Message):
     usr_id = msg.chat.id
     state = dp.current_state(user=msg.from_user.id)
     cursor.execute('''SELECT * FROM users WHERE _id = ? LIMIT 1''', (usr_id,))
-    is_admin = cursor.fetchall()[0][2]
+    admin = cursor.fetchall()[0][2]
     conn.commit()
     if msg.text == '/admin ' + config.adm_password:
         conn = sqlite3.connect("data.db")
@@ -548,7 +650,22 @@ async def cmd_admin(msg: types.Message):
         print('new admin\nid: ' + str(usr_id))
         await state.set_state('admin_panel')
         await bot.send_message(usr_id, messages.choose_action, reply_markup=markups.admin_panel)
-    elif is_admin and msg.text == '/admin panel':
+    elif admin and msg.text == '/admin panel':
+        await state.set_state('admin_panel')
+        await bot.send_message(usr_id, messages.choose_action, reply_markup=markups.admin_panel)
+
+
+@dp.message_handler(commands=["admin_panel"], state='*')
+async def cmd_admin(msg: types.Message):
+    logg_msg(msg.chat.id, msg.text)
+    conn = sqlite3.connect("data.db")
+    cursor = conn.cursor()
+    usr_id = msg.chat.id
+    state = dp.current_state(user=msg.from_user.id)
+    cursor.execute('''SELECT * FROM users WHERE _id = ? LIMIT 1''', (usr_id,))
+    admin = cursor.fetchall()[0][2]
+    conn.commit()
+    if admin:
         await state.set_state('admin_panel')
         await bot.send_message(usr_id, messages.choose_action, reply_markup=markups.admin_panel)
 
@@ -562,14 +679,7 @@ async def admin_panel(msg: types.Message):
         await state.set_state('new_product')
         await bot.send_message(usr_id, messages.new_product, reply_markup=markups.to_admin_panel)
     elif msg.text == 'Удалить товары':
-        await state.set_state('delete_product')
-        await bot.send_message(usr_id, messages.delete_product, reply_markup=markups.to_admin_panel)
-    elif msg.text == 'Добавить ключи к товару':
-        await state.set_state('add_keys')
-        await bot.send_message(usr_id, messages.add_keys, reply_markup=markups.to_admin_panel)
-    elif msg.text == 'Удалить ключи товара':
-        await state.set_state('delete_keys')
-        await bot.send_message(usr_id, messages.delete_keys, reply_markup=markups.to_admin_panel)
+        await cmd_delete_product(msg)
 
 
 @dp.message_handler(content_types=['photo'], state='new_product')
@@ -615,6 +725,23 @@ async def new_product_handler(msg: types.Message):
         await bot.send_message(usr_id, 'что-то пошло не так')
 
 
+@dp.callback_query_handler(lambda callback: callback.data != '#', state='delete_product')
+async def callback_delete_product_(callback: types.callback_query):
+    usr_id = callback.from_user.id
+    state = dp.current_state()
+    text = callback.data
+    if callback.data == 'to_admin_panel':
+        await state.set_state('admin_panel')
+        await bot.send_message(usr_id, messages.choose_action, reply_markup=markups.admin_panel)
+    else:
+        try:
+            delete_product(text)
+            await bot.send_message(usr_id, f'товар {text} удалён, вы можете продолжить либо перейти в админ панель',
+                                   reply_markup=markups.to_admin_panel)
+        except:
+            await bot.send_message(usr_id, f'не удалось удалить товар {text}', reply_markup=markups.to_admin_panel)
+
+
 @dp.message_handler(state='delete_product')
 async def delete_product_handler(msg: types.Message):
     logg_msg(msg.chat.id, msg.text)
@@ -641,36 +768,6 @@ async def delete_product_handler(msg: types.Message):
             await bot.send_message(usr_id, f'не удалось удалить товар {msg.text}', reply_markup=markups.to_admin_panel)
 
 
-@dp.message_handler(state='add_keys')
-async def add_keys_handler(msg: types.Message):
-    logg_msg(msg.chat.id, msg.text)
-    usr_id = msg.chat.id
-    text = msg.text.split(' ')
-    conn = sqlite3.connect("data.db")
-    cursor = conn.cursor()
-    cursor.execute('''SELECT * FROM products WHERE name = ?''', (text[0],))
-    if cursor.fetchall() is not None:
-        add_keys(text[0], text[1::])
-        await bot.send_message(usr_id, f'К товару {text[0]} успешно добавлены ключи({len(text) - 1})')
-    else:
-        await bot.send_message(usr_id, f'Продукт  {text[0]} не найден')
-
-
-@dp.message_handler(state='add_keys')
-async def delete_keys_handler(msg: types.Message):
-    logg_msg(msg.chat.id, msg.text)
-    usr_id = msg.chat.id
-    text = msg.text
-    conn = sqlite3.connect("data.db")
-    cursor = conn.cursor()
-    cursor.execute('''SELECT * FROM products WHERE name = ?''', (text[0],))
-    if cursor.fetchall():
-        delete_keys(text[0], text[1::])
-        await bot.send_message(usr_id, f'Ключи({len(text) - 1}) к товару {text[0]} успешно удалены')
-    else:
-        await bot.send_message(usr_id, f'Продукт  {text[0]} не найден')
-
-
 @dp.message_handler(state='name_entered')
 async def name_entered(msg: types.Message):
     logg_msg(msg.chat.id, msg.text)
@@ -681,8 +778,11 @@ async def name_entered(msg: types.Message):
         await bot.send_message(usr_id, 'выберите фильтр', reply_markup=markups.catalog_filters)
         await dp.current_state().set_state('catalog_filters')
     elif msg.text == 'полный каталог':
-        await state.set_state('catalog')
+        logg_msg(msg.chat.id, msg.text)
         markup = gen_catalog()
+        button_filters = InlineKeyboardButton('фильтры', callback_data='filters')
+        markup = markup.add(button_filters)
+        await dp.current_state().set_state('catalog')
         await bot.send_message(msg.chat.id, 'Выберите товар', reply_markup=markup)
 
 
@@ -704,6 +804,7 @@ async def catalog_filters(msg: types.Message):
         cursor.execute('''SELECT * FROM products''')
         categories = []
         products = cursor.fetchall()
+        conn.commit()
         for product in products:
             if product[1] not in categories:
                 categories.append(product[1])
@@ -757,10 +858,26 @@ async def search_handler(msg: types.Message):
 
 
 @dp.message_handler()
-async def wtf(msg: types.Message):
-    logg_msg(msg.chat.id, msg.text)
-    print('wtf')
+async def all_handler(msg: types.Message):
+    usr_id = msg.chat.id
+    logg_msg(usr_id, msg.text)
+    state = dp.current_state()
+    if msg.text == 'Фильтры':
+        await state.set_state('choose_filter')
+        await bot.send_message(usr_id, 'выберите фильтр', reply_markup=markups.catalog_filters)
+        await dp.current_state().set_state('catalog_filters')
+    elif msg.text == 'полный каталог':
+        logg_msg(msg.chat.id, msg.text)
+        markup = gen_catalog()
+        button_filters = InlineKeyboardButton('фильтры', callback_data='filters')
+        markup = markup.add(button_filters)
+        await dp.current_state().set_state('catalog')
+        await bot.send_message(msg.chat.id, 'Выберите товар', reply_markup=markup)
+    else:
+        print('')
 
 
 if __name__ == '__main__':
-    executor.start_polling(dp)
+    asyncio.run(
+        executor.start_polling(dp)
+    )

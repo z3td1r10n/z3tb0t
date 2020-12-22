@@ -1,6 +1,4 @@
-from aiogram.types import ReplyKeyboardRemove, \
-    ReplyKeyboardMarkup, KeyboardButton, \
-    InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 
 button_all_catalog = KeyboardButton('полный каталог')
@@ -15,7 +13,7 @@ button_category3 = KeyboardButton('Тип 3')
 
 
 catalog_or_filter = ReplyKeyboardMarkup(
-    resize_keyboard=True, one_time_keyboard=True, row_width=2
+    resize_keyboard=True, row_width=2
 ).row(button_all_catalog, button_go_to_filters)
 
 
@@ -35,8 +33,6 @@ categories = ReplyKeyboardMarkup(
 
 button_create_product = KeyboardButton('Добавить товар')
 button_delete_product = KeyboardButton('Удалить товары')
-button_add_keys = KeyboardButton('Добавить ключи к товару')
-button_delete_keys = KeyboardButton('Удалить ключи товара')
 button_to_admin_panel = InlineKeyboardButton('Перейти в админ-панель', callback_data='to_admin_panel')
 button_new_product = InlineKeyboardButton('Новый товар', callback_data='new_product')
 button_inline_catalog = InlineKeyboardButton('полный каталог', callback_data='catalog')
@@ -45,10 +41,8 @@ to_catalog = InlineKeyboardMarkup().add(button_inline_catalog)
 
 admin_panel = ReplyKeyboardMarkup(
     resize_keyboard=True, one_time_keyboard=True
-).add(button_create_product).add(button_delete_product)\
-    .add(button_add_keys).add(button_delete_keys)
+).row(button_create_product, button_delete_product)
 
 to_admin_panel = InlineKeyboardMarkup(
     resize_keyboard=True
 ).add(button_to_admin_panel)
-

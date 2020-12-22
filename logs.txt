@@ -1,3 +1,196 @@
 new message:
 from: 964313761
+text: /catalog
+
+new message:
+from: 964313761
+text: /catalog
+
+new message:
+from: 523608588
+text: /start
+
+new message:
+from: 523608588
+text: полный каталог
+
+new message:
+from: 523608588
+text: полный каталог
+
+new message:
+from: 964313761
+text: /start
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 523608588
+text: /start
+
+new message:
+from: 523608588
+text: полный каталог
+
+new message:
+from: 523608588
+text: полный каталог
+
+new message:
+from: 964313761
+text: /catalog
+
+new message:
+from: 523608588
+text: /catalog
+
+new message:
+from: 964313761
+text: /start
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: /catalog
+
+new message:
+from: 964313761
+text: /catalog
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: /start
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: полный каталог
+
+new message:
+from: 964313761
+text: /help_admin
+
+new message:
+from: 964313761
+text: /admin 0000
+
+new message:
+from: 964313761
+text: /help_admin
+
+new message:
+from: 964313761
+text: /help_admin
+
+new message:
+from: 964313761
+text: /admin
+
+new message:
+from: 964313761
+text: /admin panel
+
+new message:
+from: 964313761
+text: /admin_panel
+
+new message:
+from: 964313761
+text: /admin 0000
+
+new message:
+from: 964313761
+text: /admin_panel
+
+new message:
+from: 964313761
+text: /admin panel
+
+new message:
+from: 964313761
+text: /help_admin
+
+new message:
+from: 964313761
+text: /delete_product
+
+new message:
+from: 964313761
+text: /delete_product
+
+new message:
+from: 964313761
+text: /delete_product
+
+new message:
+from: 964313761
+text: /admin_panel
+
+new message:
+from: 964313761
+text: /admin_panel
+
+new message:
+from: 964313761
+text: /admin_panel
+
+new message:
+from: 964313761
+text: Удалить товары
+
+new message:
+from: 964313761
+text: Удалить товары
+
+new message:
+from: 964313761
+text: Добавить товар
+
+new message:
+from: 964313761
+text: /admin_panel
+
+new message:
+from: 964313761
+text: /catalog
+
+new message:
+from: 964313761
 text: тип
+
+new message:
+from: 964313761
+text: тип
+
